@@ -27,6 +27,9 @@ import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.FileEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 
+/* A simple class to upload files to S3
+ NOTE: When uploading, do not start keys with a /
+*/
 public final class S3Connection
 {
 	private static final String DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss +0000";
