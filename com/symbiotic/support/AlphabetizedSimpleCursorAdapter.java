@@ -1,7 +1,6 @@
 package com.symbiotic.support;
 
 import android.widget.SimpleCursorAdapter;
-import android.widget.AlphabetIndexer;
 import android.widget.SectionIndexer;
 import android.database.Cursor;
 import android.content.Context;
@@ -12,7 +11,7 @@ import android.widget.TextView;
 
 public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter implements SectionIndexer
 {
-	protected final AlphabetIndexer alphaIndexer;
+	protected final AlphabetNumberIndexer alphaIndexer;
 	protected int sortedColumnIndex;
 	protected boolean useSectionHeaders;
 	
@@ -20,9 +19,9 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	{
 		super(context, layout, cursor, from, to);
 		this.sortedColumnIndex = sortedColumnIndex;
-		alphaIndexer = new AlphabetIndexer(cursor, sortedColumnIndex, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-		registerDataSetObserver(alphaIndexer);
-		useSectionHeaders = isPositionHeader(0);
+		this.alphaIndexer = new AlphabetNumberIndexer(cursor, sortedColumnIndex, "#ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+		registerDataSetObserver(this.alphaIndexer);
+		this.useSectionHeaders = this.isPositionHeader(0);
 	}
 	
 	private String getPositionValue(int position)
@@ -31,12 +30,12 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 		
 		cursor = getCursor();
 		cursor.moveToPosition(position);
-		return cursor.getString(sortedColumnIndex);
+		return cursor.getString(this.sortedColumnIndex);
 	}
 	
 	private boolean isPositionHeader(int position)
 	{
-		String str = getPositionValue(position);
+		String str = this.getPositionValue(position);
 		return (str.length() == 1);
 	}
 	
@@ -45,7 +44,7 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	@Override
 	public int getViewTypeCount()
 	{
-		if(!useSectionHeaders)
+		if(!this.useSectionHeaders)
 			return super.getViewTypeCount();
 		return super.getViewTypeCount() + 1;
 	}
@@ -53,9 +52,9 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	@Override
 	public int getItemViewType(int position)
 	{
-		if(!useSectionHeaders || !isPositionHeader(position))
+		if(!this.useSectionHeaders || !this.isPositionHeader(position))
 			return super.getItemViewType(position);
-		return 	getViewTypeCount() - 1;
+		return 	this.getViewTypeCount() - 1;
 	}
 	
 	@Override
@@ -63,7 +62,7 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	{
 		TextView sectionHeaderView;
 		
-		if(!useSectionHeaders || !isPositionHeader(position))
+		if(!this.useSectionHeaders || !this.isPositionHeader(position))
 			return super.getView(position, convertView, parent);
 			
 		if((convertView != null) && (convertView.getTag().equals("AlphabetizedSimpleCursorSectionView")))
@@ -76,7 +75,7 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 			sectionHeaderView.setTag("AlphabetizedSimpleCursorSectionView");
 			sectionHeaderView.setPadding(5, 2, 0, 2);
 		}
-		sectionHeaderView.setText(getPositionValue(position));
+		sectionHeaderView.setText(this.getPositionValue(position));
 		return sectionHeaderView;
 	}
 	
@@ -85,7 +84,7 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	@Override
 	public boolean areAllItemsEnabled()
 	{
-		if(!useSectionHeaders)
+		if(!this.useSectionHeaders)
 			return super.areAllItemsEnabled();
 		return false;
 	}
@@ -93,20 +92,20 @@ public class AlphabetizedSimpleCursorAdapter extends SimpleCursorAdapter impleme
 	@Override
 	public boolean isEnabled(int position)
 	{
-		if(!useSectionHeaders)
+		if(!this.useSectionHeaders)
 			return super.isEnabled(position);
-		return !isPositionHeader(position);
+		return !this.isPositionHeader(position);
 	}
 	
 	// Methods for SectionIndexer interface
 	
 	@Override
-	public int getPositionForSection(int section) { return alphaIndexer.getPositionForSection(section); } 
+	public int getPositionForSection(int section) { return this.alphaIndexer.getPositionForSection(section); } 
 
 	@Override
-	public int getSectionForPosition(int position) { return alphaIndexer.getSectionForPosition(position); } 
+	public int getSectionForPosition(int position) { return this.alphaIndexer.getSectionForPosition(position); } 
 
 	@Override
-	public Object[] getSections() { return alphaIndexer.getSections(); } 
+	public Object[] getSections() { return this.alphaIndexer.getSections(); } 
  
 }

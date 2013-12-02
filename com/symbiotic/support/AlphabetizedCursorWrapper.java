@@ -1,6 +1,5 @@
 package com.symbiotic.support;
 
-import android.widget.AlphabetIndexer;
 import android.widget.SimpleCursorAdapter;
 import android.database.Cursor;
 import android.database.CursorWrapper;
@@ -10,43 +9,45 @@ public class AlphabetizedCursorWrapper extends CursorWrapper
 {
 	protected final Cursor cursor;
 	protected final int sortedColumnIndex;
-	protected AlphabetIndexer alphaIndexer;
+	protected AlphabetNumberIndexer alphaIndexer;
 	protected int position;
 	protected boolean isSectionHeader;
+	protected int numberSection;
 	
 	public AlphabetizedCursorWrapper(Cursor cursor, int sortedColumnIndex)
 	{
 		super(cursor);
 		this.cursor = cursor;
 		this.sortedColumnIndex = sortedColumnIndex;
-		position = -1;
-		isSectionHeader = false;
-		buildAlphaIndexer();
+		this.position = -1;
+		this.isSectionHeader = false;
+		this.numberSection = 0;
+		this.buildAlphaIndexer();
 	}
 	
 	private void buildAlphaIndexer()
 	{
 		StringBuilder stringBuilder;
 		int section, position, prevPosition;
+
+		this.alphaIndexer = new AlphabetNumberIndexer(this.cursor, this.sortedColumnIndex, "#ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 		
-		alphaIndexer = new AlphabetIndexer(cursor, sortedColumnIndex, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-		
-		// Build a restricted AlphabetIndexer for sections that exist
+		// Build a restricted AlphabetNumberIndexer for sections that exist
 		stringBuilder = new StringBuilder();
-		prevPosition = alphaIndexer.getPositionForSection(0);
-		for(section = 1; section < alphaIndexer.getSections().length; ++section)
+		prevPosition = this.alphaIndexer.getPositionForSection(0);
+		for(section = 1; section < this.alphaIndexer.getSections().length; ++section)
 		{
-			position = alphaIndexer.getPositionForSection(section);
+			position = this.alphaIndexer.getPositionForSection(section);
 			if(prevPosition != position)
-				stringBuilder.append((char)('A' + (section - 1)));
+				stringBuilder.append(this.alphaIndexer.getSections()[section - 1]);
 			prevPosition = position;
 		}
 		// Check the last section
 		--section;
-		if(cursor.getCount() != alphaIndexer.getPositionForSection(section))
-			stringBuilder.append((char)('A' + section));
+		if(this.cursor.getCount() != this.alphaIndexer.getPositionForSection(section))
+			stringBuilder.append("Z");
 
-		alphaIndexer = new AlphabetIndexer(cursor, sortedColumnIndex, stringBuilder.toString());
+		this.alphaIndexer = new AlphabetNumberIndexer(this.cursor, this.sortedColumnIndex, stringBuilder.toString());
 	}
 	
 	private boolean determinePosition()
@@ -55,54 +56,54 @@ public class AlphabetizedCursorWrapper extends CursorWrapper
 		int section;
 		int count;
 		
-		count = getCount();
+		count = this.getCount();
 		
 		if(count == 0)
 		{
-			position = -1;
+			this.position = -1;
 			return false;
 		}
-		if(position == -1)
+		if(this.position == -1)
 		{
-			isSectionHeader = false;
+			this.isSectionHeader = false;
 			realPosition = -1;
 		}
-		else if(position == 0)
+		else if(this.position == 0)
 		{
-			isSectionHeader = true;
+			this.isSectionHeader = true;
 			realPosition = 0;
 		}
-		else if(position == (count - 1))
+		else if(this.position == (count - 1))
 		{
-			isSectionHeader = false;
+			this.isSectionHeader = false;
 			realPosition = super.getCount() - 1;
 		}
-		else if(position == count)
+		else if(this.position == count)
 		{
-			isSectionHeader = false;
+			this.isSectionHeader = false;
 			realPosition = super.getCount();
 		}
 		else
 		{
-			// find the section
-			for(section = 0; section < alphaIndexer.getSections().length; ++section)
+			// Find the section
+			for(section = 0; section < this.alphaIndexer.getSections().length; ++section)
 			{
-				realPosition = alphaIndexer.getPositionForSection(section);
-				if((realPosition + section) > position)
+				realPosition = this.alphaIndexer.getPositionForSection(section);
+				if((realPosition + section) > this.position)
 					break;
 			}
 			--section;
 			
-			// section found, which gives the number of header rows appearing before this position
-			realPosition = position - section;
-			if(realPosition == alphaIndexer.getPositionForSection(section))
+			// Section found, which gives the number of header rows appearing before this position
+			realPosition = this.position - section;
+			if(realPosition == this.alphaIndexer.getPositionForSection(section))
 			{
-				isSectionHeader = true;
+				this.isSectionHeader = true;
 			}
 			else
 			{
-				isSectionHeader = false;
-				// account for the section header of the current section
+				this.isSectionHeader = false;
+				// Account for the section header of the current section
 				--realPosition;
 			}
 		}
@@ -113,89 +114,93 @@ public class AlphabetizedCursorWrapper extends CursorWrapper
 	@Override
 	public String getString(int columnIndex)
 	{
-		if(!isSectionHeader || (columnIndex != sortedColumnIndex))
+		if(!this.isSectionHeader || (columnIndex != this.sortedColumnIndex))
 			return super.getString(columnIndex);
-		return super.getString(columnIndex).substring(0, 1);
+		String sectionHeader = super.getString(columnIndex).substring(0, 1);
+		if(Character.isDigit(sectionHeader.charAt(0)))
+			return "#";
+		else
+			return sectionHeader;
 	}
 	
 	@Override
 	public int getCount()
 	{
-		return super.getCount() + alphaIndexer.getSections().length;
+		return super.getCount() + this.alphaIndexer.getSections().length;
 	}
 	
 	@Override
 	public int getPosition()
 	{
-		return position;
+		return this.position;
 	}
 	
 	@Override
 	public boolean move(int offset)
 	{
-		position += offset;
-		if(position <= -1)
-			position = -1;
-		else if(position >= getCount())
-			position = getCount();
-		return determinePosition();
+		this.position += offset;
+		if(this.position <= -1)
+			this.position = -1;
+		else if(this.position >= this.getCount())
+			this.position = this.getCount();
+		return this.determinePosition();
 	}
 	
 	@Override
 	public boolean moveToPosition(int newPosition)
 	{
-		position = newPosition;
-		if(position <= -1)
-			position = -1;
-		else if(position >= getCount())
-			position = getCount();
-		return determinePosition();
+		this.position = newPosition;
+		if(this.position <= -1)
+			this.position = -1;
+		else if(this.position >= this.getCount())
+			this.position = this.getCount();
+		return this.determinePosition();
 	}
 	
 	@Override
 	public boolean moveToFirst()
 	{
-		position = 0;
-		return determinePosition();
+		this.position = 0;
+		return this.determinePosition();
 	}
 	
 	@Override
 	public boolean moveToLast()
 	{
-		position = getCount() - 1;
-		return determinePosition();
+		this.position = this.getCount() - 1;
+		return this.determinePosition();
 	}
 	
 	@Override
 	public boolean moveToNext()
 	{
-		++position;
-		if(position > getCount())
-			position = getCount();
-		return determinePosition();
+		++this.position;
+		if(this.position > this.getCount())
+			this.position = this.getCount();
+		return this.determinePosition();
 	}
 	
 	@Override
 	public boolean moveToPrevious()
 	{
-		--position;
-		if(position < -1)
-			position = -1;
-		return determinePosition();
+		--this.position;
+		if(this.position < -1)
+			this.position = -1;
+		return this.determinePosition();
 	}
 
 	@Override
 	public void close()
 	{
 		super.close();
-		alphaIndexer.onInvalidated();
+		this.alphaIndexer.onInvalidated();
 	}
 	
 	@Override
 	public void deactivate()
 	{
 		super.deactivate();
-		alphaIndexer.onInvalidated();
+		this.alphaIndexer.onInvalidated();
 	}
 	
 	@Override
@@ -203,7 +208,7 @@ public class AlphabetizedCursorWrapper extends CursorWrapper
 	{
 		boolean ret;
 		ret = super.requery();
-		buildAlphaIndexer();
+		this.buildAlphaIndexer();
 		return ret;
 	}
 
