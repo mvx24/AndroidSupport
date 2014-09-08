@@ -84,7 +84,7 @@ public final class S3Connection
 	private String accessKeyId;
 	private String secretAccessKey;
 	private String error;
-	private HashMap<String, String> extraHeaders = HashMap<String, String>();
+	private HashMap<String, String> extraHeaders = new HashMap<String, String>();
 	public String bucket;
 
 	public S3Connection(String accessKeyId, String secretAccessKey, RequestListener requestListener)
