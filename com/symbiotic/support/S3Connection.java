@@ -13,6 +13,8 @@ import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map.Entry;
 import java.util.Scanner;
 import java.util.TimeZone;
 
@@ -20,6 +22,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.Mac;
 
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -27,11 +30,18 @@ import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.FileEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 
-/* A simple class to upload files to S3
- NOTE: When uploading, do not start keys with a /
-*/
+/**
+ * A simple class to upload files to S3.
+ * Optionally, gzip the data or files first using java.util.zip.GZIPOutputStream and then setting the DETECT_GZIP option.
+ */
 public final class S3Connection
 {
+	public static final int DETECT_GZIP = (1<<0);
+	public static final int NO_CACHE = (1<<1);
+	public static final int PERMANENT_CACHE = (1<<2);
+	public static final int REDUCED_REDUNDANCY = (1<<3);
+	public static final int HTTPS = (1<<4);
+
 	private static final String DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss +0000";
 	private static final String TAG = "S3Connection";
 
@@ -49,7 +59,7 @@ public final class S3Connection
 		void uploadedFile(S3Connection connection, String key);
 		void requestFailed(S3Connection connection, String key, String errorMessage);
 	}
-	
+
 	// Base class to make implementing anonymous classes easier
 	public static class BasicRequestListener implements RequestListener
 	{
@@ -69,10 +79,12 @@ public final class S3Connection
 		}
 	}
 	
+	private HttpRequestBase request;
 	private RequestListener listener;
 	private String accessKeyId;
 	private String secretAccessKey;
 	private String error;
+	private HashMap<String, String> extraHeaders = new HashMap<String, String>();
 	public String bucket;
 
 	public S3Connection(String accessKeyId, String secretAccessKey, RequestListener requestListener)
@@ -84,17 +96,28 @@ public final class S3Connection
 
 	public void cancel()
 	{
-		// TODO:
+		if(this.request != null)
+			this.request.abort();
 	}
-	
+
 	public RequestListener getListener()
 	{
 		return this.listener;
 	}
-	
+
 	public String getError()
 	{
 		return this.error;
+	}
+
+	public void setExtraHeader(String header, String value)
+	{
+		this.extraHeaders.put(header, value);
+	}
+
+	public void clearExtraHeaders()
+	{
+		this.extraHeaders.clear();
 	}
 
 	// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
@@ -106,12 +129,12 @@ public final class S3Connection
 		SecretKey key;
 		Mac mac;
 		String hmac;
-	
+
 		if(md5 == null)
 			md5 = "";
 		if(contentType == null)
 			contentType = "";
-	
+
 		// Create the string to sign
 		if(resource.startsWith("/"))
 			canonicalizedResource = String.format("/%s%s", this.bucket, resource);
@@ -144,7 +167,7 @@ public final class S3Connection
 		String[] components = path.split("\\.");
 		return MimeTypeMap.getSingleton().getMimeTypeFromExtension(components[components.length - 1]);
 	}
-	
+
 	private static String convertStreamToString(InputStream is)
 	{
 		try {
@@ -162,7 +185,7 @@ public final class S3Connection
 		else
 			mainHandler.post(action);
 	}
-	
+
 	private static byte[] convertStreamToMD5(InputStream is)
 	{
 		try
@@ -181,7 +204,7 @@ public final class S3Connection
 		} catch(Exception e) { return null; }
 	}
 
-	public void uploadData(final byte[] data, final String contentType, final String key, final boolean securely)
+	public void uploadData(final byte[] data, final String contentType, final String key, final int options)
 	{
 		if(data == null || key == null || data.length == 0 || key.length() == 0)
 		{
@@ -190,9 +213,9 @@ public final class S3Connection
 				this.listener.requestFailed(this, key, this.error);
 			return;
 		}
-		
+
 		this.cancel();
-		
+
 		Thread thread = new Thread(new Runnable() {
 			public void run()
 			{
@@ -214,17 +237,29 @@ public final class S3Connection
 					date = getDateHeader();
 					authorization = S3Connection.this.getAuthorizationHeader("PUT", md5, dataContentType, date, key);
 
-					if(securely)					
+					if((options & HTTPS) != 0)
 						request = new HttpPut(String.format(URL_SECURE, S3Connection.this.bucket, key));
 					else
 						request = new HttpPut(String.format(URL, S3Connection.this.bucket, key));
+					S3Connection.this.request = request;
 
+					// Check for the gzip magic number and add the Content-Encoding header
+					if((options & DETECT_GZIP) != 0 && data[0] == 0x1f && data[1] == 0x8b)
+						request.setHeader("Content-Encoding", "gzip");
+					if((options & NO_CACHE) != 0)
+						request.setHeader("Cache-Control", "no-cache");
+					if((options & PERMANENT_CACHE) != 0)
+						request.setHeader("Cache-Control", "max-age=315360000");
+					if((options & REDUCED_REDUNDANCY) != 0)
+						request.setHeader("x-amz-storage-class", "REDUCED_REDUNDANCY");
 					// Note: Content-Length is set automatically by the entity. Adding a Content-Length will cause an exception
 					if(dataContentType != null && dataContentType.length() > 0)
-						request.addHeader("Content-Type", dataContentType);
-					request.addHeader("Content-MD5", md5);
-					request.addHeader("Date", date);
-					request.addHeader("Authorization", authorization);
+						request.setHeader("Content-Type", dataContentType);
+					request.setHeader("Content-MD5", md5);
+					request.setHeader("Date", date);
+					request.setHeader("Authorization", authorization);
+					for(Entry<String, String> extraHeader : S3Connection.this.extraHeaders.entrySet())
+						request.addHeader(extraHeader.getKey(), extraHeader.getValue());
 					request.setEntity(new ByteArrayEntity(data));
 					
 					client = new DefaultHttpClient();
@@ -251,16 +286,19 @@ public final class S3Connection
 				}
 				catch(Exception e)
 				{
-					S3Connection.this.error = e.getMessage();
-					if(S3Connection.this.listener != null)
-						S3Connection.runOnUiThread(new Runnable() { public void run() { S3Connection.this.listener.requestFailed(S3Connection.this, key, S3Connection.this.error); } });
+					if(!request.isAborted())
+					{
+						S3Connection.this.error = e.getMessage();
+						if(S3Connection.this.listener != null)
+							S3Connection.runOnUiThread(new Runnable() { public void run() { S3Connection.this.listener.requestFailed(S3Connection.this, key, S3Connection.this.error); } });
+					}
 				}
 			}
 		});
 		thread.start();
 	}
 
-	public void uploadFile(final File file, final String key, final boolean securely)
+	public void uploadFile(final File file, final String key, final int options)
 	{
 		if(key == null || key.length() == 0)
 		{
@@ -277,9 +315,9 @@ public final class S3Connection
 				this.listener.requestFailed(this, key, this.error);
 			return;
 		}
-		
+
 		this.cancel();
-		
+
 		Thread thread = new Thread(new Runnable() {
 			public void run()
 			{
@@ -300,22 +338,38 @@ public final class S3Connection
 					date = getDateHeader();
 					authorization = S3Connection.this.getAuthorizationHeader("PUT", md5, contentType, date, key);
 
-					if(securely)					
+					if((options & HTTPS) != 0)
 						request = new HttpPut(String.format(URL_SECURE, S3Connection.this.bucket, key));
 					else
 						request = new HttpPut(String.format(URL, S3Connection.this.bucket, key));
+					S3Connection.this.request = request;
 
+					if((options & DETECT_GZIP) != 0)
+					{
+						fileInputStream = new FileInputStream(file);
+						if(fileInputStream.read() == 0x1f && fileInputStream.read() == 0x8b)
+							request.setHeader("Content-Encoding", "gzip");
+						fileInputStream.close();
+					}
+					if((options & NO_CACHE) != 0)
+						request.setHeader("Cache-Control", "no-cache");
+					if((options & PERMANENT_CACHE) != 0)
+						request.setHeader("Cache-Control", "max-age=315360000");
+					if((options & REDUCED_REDUNDANCY) != 0)
+						request.setHeader("x-amz-storage-class", "REDUCED_REDUNDANCY");
 					// Note: Content-Length is set automatically by the entity. Adding a Content-Length will cause an exception
 					if(contentType != null && contentType.length() > 0)
-						request.addHeader("Content-Type", contentType);
-					request.addHeader("Content-MD5", md5);
-					request.addHeader("Date", date);
-					request.addHeader("Authorization", authorization);
+						request.setHeader("Content-Type", contentType);
+					request.setHeader("Content-MD5", md5);
+					request.setHeader("Date", date);
+					request.setHeader("Authorization", authorization);
+					for(Entry<String, String> extraHeader : S3Connection.this.extraHeaders.entrySet())
+						request.addHeader(extraHeader.getKey(), extraHeader.getValue());
 					request.setEntity(new FileEntity(file, contentType));
-					
+
 					client = new DefaultHttpClient();
 					response = client.execute(request);
-					
+
 					if(response.getStatusLine().getStatusCode() != 200)
 					{
 						int start, end;
@@ -337,26 +391,29 @@ public final class S3Connection
 				}
 				catch(Exception e)
 				{
-					S3Connection.this.error = e.getMessage();
-					if(S3Connection.this.listener != null)
-						S3Connection.runOnUiThread(new Runnable() { public void run() { S3Connection.this.listener.requestFailed(S3Connection.this, key, S3Connection.this.error); } });
+					if(!request.isAborted())
+					{
+						S3Connection.this.error = e.getMessage();
+						if(S3Connection.this.listener != null)
+							S3Connection.runOnUiThread(new Runnable() { public void run() { S3Connection.this.listener.requestFailed(S3Connection.this, key, S3Connection.this.error); } });
+					}
 				}
 			}
 		});
 		thread.start();
 	}
 
-	public static void uploadData(byte[] data, String bucket, String key, String contentType, boolean securely, String accessKeyId, String secretAccessKey, RequestListener requestListener)
+	public static void uploadData(byte[] data, String bucket, String key, String contentType, int options, String accessKeyId, String secretAccessKey, RequestListener requestListener)
 	{
 		S3Connection connection = new S3Connection(accessKeyId, secretAccessKey, requestListener);
 		connection.bucket = bucket;
-		connection.uploadData(data, contentType, key, securely);
+		connection.uploadData(data, contentType, key, options);
 	}
 
-	public static void uploadFile(File file, String bucket, String key, boolean securely, String accessKeyId, String secretAccessKey, RequestListener requestListener)
+	public static void uploadFile(File file, String bucket, String key, int options, String accessKeyId, String secretAccessKey, RequestListener requestListener)
 	{
 		S3Connection connection = new S3Connection(accessKeyId, secretAccessKey, requestListener);
 		connection.bucket = bucket;
-		connection.uploadFile(file, key, securely);
+		connection.uploadFile(file, key, options);
 	}
 }
