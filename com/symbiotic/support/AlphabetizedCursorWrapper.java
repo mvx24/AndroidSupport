@@ -120,7 +120,7 @@ public class AlphabetizedCursorWrapper extends CursorWrapper
 		if(Character.isDigit(sectionHeader.charAt(0)))
 			return "#";
 		else
-			return sectionHeader;
+			return sectionHeader.toUpperCase();
 	}
 	
 	@Override
